@@ -1,0 +1,157 @@
+SAMPLE=CaF467b
+
+#directories
+
+WORK=$HOME/BioMob
+RAW=$WORK/raw_data
+TRIM=$WORK/$SAMPLE/trimming_clean
+ASSEMBLY=$WORK/$SAMPLE/assembly
+ANVIO=$WORK/$SAMPLE/anvio/
+MAPPING=$WORK/$SAMPLE/mapping/
+
+####################################################################
+### QC of fastqc pre-trim
+####################################################################
+mkdir $WORK/$SAMPLE/
+mkdir $WORK/$SAMPLE/fastqc
+fastqc $RAW/$SAMPLE* -t 10 -o $WORK/$SAMPLE/fastqc/ -f fastq
+
+###################################################################
+### trimming and removal of adapter using fastp
+###################################################################
+
+echo Trimming
+
+mkdir $WORK/$SAMPLE/trimming_clean
+TRIM=$WORK/$SAMPLE/trimming_clean
+
+
+
+fastp \
+--in1 $RAW/${SAMPLE}_S88_R1_001.fastq.gz \
+--in2 $RAW/${SAMPLE}_S88_R2_001.fastq.gz \
+--out1 $TRIM/$SAMPLE.clean1.fq.gz \
+--out2 $TRIM/$SAMPLE.clean2.fq.gz \
+--html $TRIM/$SAMPLE.html \
+--json $TRIM/$SAMPLE.json \
+-f 10 \
+-F 10 \
+-c 
+
+####################################################################
+### co-assembly megahit
+### 
+####################################################################
+
+ASSEMBLY=$WORK/$SAMPLE/assembly
+megahit -1 $TRIM/$SAMPLE.clean1.fq.gz -2 $TRIM/$SAMPLE.clean2.fq.gz -o $ASSEMBLY -t 80 --min-contig-len 5000
+
+####################################################################
+### loading into anvio ### 
+####################################################################
+
+mkdir $WORK/$SAMPLE/anvio/
+ANVIO=$WORK/$SAMPLE/anvio/
+anvi-script-reformat-fasta $ASSEMBLY/final.contigs.fa -o $ANVIO/$SAMPLE.fa  -l 5000 --simplify-names -r $ANVIO/$SAMPLE_report.txt
+
+###create anvio database
+
+#Gene calling, taxonomical, functional assignment to contigs and generate summary
+
+anvi-gen-contigs-database -f $ANVIO/$SAMPLE.fa -o $ANVIO/$SAMPLE.db -n $SAMPLE 
+anvi-run-hmms -c $ANVIO/$SAMPLE.db 
+anvi-run-scg-taxonomy -c $ANVIO/$SAMPLE.db 
+anvi-scan-trnas  -c $ANVIO/$SAMPLE.db --log-file $ANVIO/log_trna.txt --trna-hits-file trna_hit.txt
+anvi-estimate-scg-taxonomy -c $ANVIO/$SAMPLE.db -o $ANVIO/${SAMPLE}_SCG.txt --just-do-it
+
+anvi-display-contigs-stats $ANVIO/$SAMPLE.db  --report-as-text  --output-file $ANVIO/${SAMPLE}_contigs_summary.txt
+
+####################################################################
+### mapping with bowtie2
+### 
+####################################################################
+
+echo mapping
+
+## create mapping directory
+
+mkdir $WORK/$SAMPLE/mapping/
+MAPPING=$WORK/$SAMPLE/mapping/
+
+bowtie2-build $ANVIO/$SAMPLE.fa  $MAPPING/$SAMPLE 
+
+## transfering sample name file to mapping folder.
+
+### mapping read to contigs
+
+bowtie2 -x $MAPPING/$SAMPLE \
+-1 $TRIM/$SAMPLE.clean1.fq.gz \
+-2 $TRIM/$SAMPLE.clean2.fq.gz \
+-S $MAPPING/$SAMPLE.sam 
+
+echo convert sam to bam
+conda deactivate
+samtools view -S -b $MAPPING/${SAMPLE}.sam > $MAPPING/${SAMPLE}.bam
+
+
+## bam to anvio_bam profiling
+conda activate anvio7
+anvi-init-bam $MAPPING/${SAMPLE}.bam -o $MAPPING/${SAMPLE}_anvi.bam
+
+rm $MAPPING/*.bt2
+rm $MAPPING/*.sam
+
+echo mapping_done
+
+
+####################################################################
+### Profiling  bam --> anvio to ensure clean genomes
+####################################################################
+
+anvi-profile -i $MAPPING/${SAMPLE}_anvi.bam -c $ANVIO/$SAMPLE.db  --output-dir $ANVIO/profile --sample-name $SAMPLE 
+
+#add collection name
+anvi-script-add-default-collection -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFILE.db -C $SAMPLE 
+
+#this need to be done on local PC, won't tunnel properly on cluster
+#Isolate helicobacter based on phylotree
+
+#generate new fasta file with contigs associated only with taxa of choice.
+anvi-summarize -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFILE.db -C $SAMPLE -o $ANVIO/$SAMPLE
+
+checkm lineage_wf $ANVIO/$SAMPLE/bin_by_bin/Helicobacter/Helicobacter-contigs.fa $ANVIO/$SAMPLE/checkm -x fa 
+
+#extract read for the helicobacter bin
+anvi-get-short-reads-from-bam -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFILE.db -C $SAMPLE -b Helicobacter $MAPPING/${SAMPLE}_anvi.bam --gzip-output --split-R1-and-R2 -O $ANVIO/helicobacter
+
+####################################################################
+### RAGTAG
+####################################################################
+#download best reference genome. For this genome, Helicobacter canadensisn is best based on fastANI output
+# correct a query assembly
+# cp fasta file into ragtag folder in anvio
+cp $ANVIO/$SAMPLE/bin_by_bin/Helicobacter/Helicobacter-contigs.fa $ANVIO/$SAMPLE/ragtag/Helicobacter.fa
+
+cp $ANVIO
+
+# scaffold a query assembly
+ragtag.py scaffold $WORK/$SAMPLE/reference_fasta/helicobacter_canadensis/chr.fna $ANVIO/$SAMPLE/bin_by_bin/Helicobacter/Helicobacter-contigs.fa
+
+ragtag.py correct $WORK/$SAMPLE/reference_fasta/helicobacter_canadensis/chr.fna $ANVIO/ragtag_output/ragtag.scaffold.fasta
+
+# make joins and fill gaps in target.fa using sequences from query.fa
+ragtag.py patch $ANVIO/ragtag_output/ragtag.scaffold.fasta $ANVIO/$SAMPLE/bin_by_bin/Helicobacter/Helicobacter-contigs.fa
+
+####################################################################
+### phylogeny
+####################################################################
+conda deactivate
+conda activate /isilon/ottawa-rdc/users/shared/chenw_lab/galen/gtdbtk
+
+
+gtdbtk de_novo_wf --genome_dir $ANVIO/$SAMPLE/bin_by_bin/Helicobacter/ \
+--bacteria \
+--out_dir $ANVIO/$SAMPLE/gtdbtk \
+--taxa_filter  g__Helicobacter \
+--outgroup_taxon f__Arcobacteraceae \
+-x fa --cpu 20 
