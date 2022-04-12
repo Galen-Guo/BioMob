@@ -14,7 +14,7 @@ conda activate anvio7
 
 GALEN=/isilon/ottawa-rdc/users/shared/chenw_lab/galen
 WORK=$GALEN/BioMob/acinetobacter
-RAW=$WORK/raw_data
+RAW=$GALEN/BioMob/raw_data
 
 for SAMPLE in `awk '{print $1}' $RAW/sample_name`;
 do
@@ -157,30 +157,12 @@ anvi-summarize -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFILE.db -C $SAMPLE -o $
 
 done
 
-####################################################################
-### checkm
-####################################################################
-
-for SAMPLE in `awk '{print $1}' $RAW/sample_name`;
-do
-echo $SAMPLE
-
-#directories
 
 
-TRIM=$WORK/$SAMPLE/trimming_clean
-ASSEMBLY=$WORK/$SAMPLE/assembly
-ANVIO=$WORK/$SAMPLE/anvio/
-MAPPING=$WORK/$SAMPLE/mapping/
 
+conda activate /isilon/ottawa-rdc/users/shared/chenw_lab/galen/gtdbtk
 
-checkm lineage_wf \
-$ANVIO/$SAMPLE/bin_by_bin/EVERYTHING/ \
-$ANVIO/$SAMPLE/checkm \
--x fa -t 16
-done
-
-## concatenate all "bin_summary" file into one. 
+GTDBTK_DATA_PATH="/isilon/common/reference/databases/gtdb/release202"
 
 
 for SAMPLE in `awk '{print $1}' $RAW/sample_name`;
@@ -195,53 +177,12 @@ ASSEMBLY=$WORK/$SAMPLE/assembly
 ANVIO=$WORK/$SAMPLE/anvio/
 MAPPING=$WORK/$SAMPLE/mapping/
 
-echo $SAMPLE >> all_acinetobacter_summary.txt
-cat $ANVIO/$SAMPLE/bins_summary.txt >> all_acinetobacter_summary.txt
+gtdbtk ani_rep --genome_dir $ANVIO/$SAMPLE/bin_by_bin/EVERYTHING/ --out_dir $ANVIO/$SAMPLE/gtdb_output -x fa --cpus 20 --prefix $SAMPLE 
 
 done
 
 
-####################################################################
-### loading into anvio ### 
-####################################################################
-
-find $RAW/*.fasta  -printf "%f\n" > sample_name
-sed -e s/.fasta//g -i $RAW/sample_name
-
-for i in `awk '{print $1}' $RAW/sample_name`;
-do
-echo $i
-anvi-script-reformat-fasta $RAW/${i}.fasta -o $ANVIO/${i}.fasta  -l 5000 --simplify-names -r $ANVIO/${i}_report.txt
-done
-
-
-
-
-
-###create anvio database
-
-mkdir $ANVIO
-
-#Gene calling, taxonomical, functional assignment to contigs and generate summary
-
-for i in `awk '{print $1}' $RAW/sample_name`;
-do
-
-echo $i
-mkdir $ANVIO/$i
-cd $ANVIO/$i
-anvi-gen-contigs-database -f $ANVIO/$i/${i}.fasta -o $ANVIO/$i/${i}.db -n GRDI -T 80
-anvi-run-hmms -c $ANVIO/$i/${i}.db -T 80
-anvi-run-kegg-kofams -c $ANVIO/$i/${i}.db -T 80 --hmmer-program hmmsearch --keep-all-hits --just-do-it
-anvi-run-ncbi-cogs -c $ANVIO/$i/${i}.db --cog-data-dir $ANVIO/$i/COG --num-threads 80 --search-with diamond
-anvi-get-sequences-for-gene-calls -c $ANVIO/$i/${i}.db --get-aa-sequences -o -c $ANVIO/$i/${i}_aa.fa
-anvi-run-scg-taxonomy -c $ANVIO/$i/${i}.db -T 80 
-anvi-estimate-scg-taxonomy -c $ANVIO/$i/${i}.db --output-file $ANVIO/$i/${i}_scg_est_output.txt
-anvi-display-contigs-stats $ANVIO/$i/${i}.db  --report-as-text  --output-file $ANVIO/$i/${i}_contigs_summary.txt
-done
-
-
-
+gtdbtk ani_rep --genome_dir $WORK/all_fas/ --out_dir $WORK/all_fas/gtdb_output -x fa --cpus 20 
 
 ### pangenomic?
 
@@ -253,12 +194,32 @@ Name_02	/path/to/contigs-02.db
 Name_03	/path/to/contigs-03.db
 (…)	(…)
 
+ls -d /path_to_db > acinetobacter_genome.txt
+
+
 
 # load to anvio
-anvi-gen-genomes-storage -e $ANVIO/external_genome.txt -o $ANVIO/aqua_pathos-GENOMES.db
+mkdir $WORK/pangenome
+PAN=$WORK/pangenome
+
+
+
+
+
+anvi-gen-genomes-storage -e $PAN/acinetobacter_genome.txt -o $PAN/acinetobacter-GENOMES.db
 
 # run pangenomic analysis
-anvi-pan-genome -g $ANVIO/aqua_pathos-GENOMES.db -n BioMob
 
-anvi-display-pan -p $ANVIO/BioMob/BioMob-PAN.db -g $ANVIO/aqua_pathos-GENOMES.db
+anvi-pan-genome -g $PAN/acinetobacter-GENOMES.db -n biomob_acinetobacter -T 24 --align-with famsa -o $PAN/biomob_acinetobacter --enforce-hierarchical-clustering
+
+
+
+anvi-compute-genome-similarity -e $PAN/acinetobacter_genome.txt \
+-p $PAN/biomob_acinetobacter/biomob_acinetobacter-PAN.db  \
+                               -o $PAN/genome-similarity \
+                               --program fastANI
+
+
+
+anvi-display-pan -p $PAN/biomob_acinetobacter/biomob_acinetobacter-PAN.db -g $PAN/acinetobacter-GENOMES.db
 
