@@ -58,12 +58,12 @@ fastp \
 --json $TRIM/${SAMPLE}.json \
 -f 10 \
 -F 10 \
--c 
+-c
 
 
 ####################################################################
 ### co-assembly megahit
-### 
+###
 ####################################################################
 
 
@@ -72,7 +72,7 @@ megahit -1 $TRIM/${SAMPLE}_clean1.fq.gz -2 $TRIM/${SAMPLE}_clean2.fq.gz -o $ASSE
 
 
 ####################################################################
-### loading into anvio ### 
+### loading into anvio ###
 ####################################################################
 
 mkdir $WORK/$SAMPLE/anvio/
@@ -90,7 +90,7 @@ anvi-run-hmms -c $ANVIO/$SAMPLE.db -T 80
 anvi-run-kegg-kofams -c $ANVIO/$SAMPLE.db -T 80 --hmmer-program hmmsearch --just-do-it
 anvi-run-ncbi-cogs -c $ANVIO/$SAMPLE.db --cog-data-dir $GALEN/COG --num-threads 80 --search-with diamond
 anvi-run-pfams -c $ANVIO/$SAMPLE.db --pfam-data-dir $GALEN/database/pfam --hmmer-program hmmscan --num-threads 80
-anvi-run-scg-taxonomy -c $ANVIO/$SAMPLE.db -T 80 
+anvi-run-scg-taxonomy -c $ANVIO/$SAMPLE.db -T 80
 anvi-scan-trnas  -c $ANVIO/$SAMPLE.db --log-file $ANVIO/log_trna.txt --trna-hits-file trna_hit.txt
 anvi-estimate-scg-taxonomy -c $ANVIO/$SAMPLE.db -o $ANVIO/${SAMPLE}_SCG.txt --just-do-it
 
@@ -100,7 +100,7 @@ anvi-get-sequences-for-gene-calls -c $ANVIO/$SAMPLE.db --get-aa-sequences -o $AN
 
 ####################################################################
 ### mapping with bowtie2
-### 
+###
 ####################################################################
 
 echo mapping
@@ -146,10 +146,10 @@ echo mapping_done
 ####################################################################
 
 anvi-profile -i $MAPPING/${SAMPLE}_anvi.bam -c $ANVIO/$SAMPLE.db  \
---output-dir $ANVIO/profile --sample-name $SAMPLE -T 100 
+--output-dir $ANVIO/profile --sample-name $SAMPLE -T 100
 
 #add collection name
-anvi-script-add-default-collection -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFILE.db -C $SAMPLE 
+anvi-script-add-default-collection -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFILE.db -C $SAMPLE
 
 #generate new fasta file with contigs associated only with taxa of choice.
 anvi-summarize -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFILE.db -C $SAMPLE -o $ANVIO/$SAMPLE
@@ -177,12 +177,12 @@ ASSEMBLY=$WORK/$SAMPLE/assembly
 ANVIO=$WORK/$SAMPLE/anvio/
 MAPPING=$WORK/$SAMPLE/mapping/
 
-gtdbtk ani_rep --genome_dir $ANVIO/$SAMPLE/bin_by_bin/EVERYTHING/ --out_dir $ANVIO/$SAMPLE/gtdb_output -x fa --cpus 20 --prefix $SAMPLE 
+gtdbtk ani_rep --genome_dir $ANVIO/$SAMPLE/bin_by_bin/EVERYTHING/ --out_dir $ANVIO/$SAMPLE/gtdb_output -x fa --cpus 20 --prefix $SAMPLE
 
 done
 
 
-gtdbtk ani_rep --genome_dir $WORK/all_fas/ --out_dir $WORK/all_fas/gtdb_output -x fa --cpus 20 
+gtdbtk ani_rep --genome_dir $WORK/all_fas/ --out_dir $WORK/all_fas/gtdb_output -x fa --cpus 20
 
 ### pangenomic?
 
@@ -213,13 +213,15 @@ anvi-gen-genomes-storage -e $PAN/acinetobacter_genome.txt -o $PAN/acinetobacter-
 anvi-pan-genome -g $PAN/acinetobacter-GENOMES.db -n biomob_acinetobacter -T 24 --align-with famsa -o $PAN/biomob_acinetobacter --enforce-hierarchical-clustering
 
 
-
 anvi-compute-genome-similarity -e $PAN/acinetobacter_genome.txt \
 -p $PAN/biomob_acinetobacter/biomob_acinetobacter-PAN.db  \
                                -o $PAN/genome-similarity \
                                --program fastANI
 
+                               anvi-compute-genome-similarity -e $PAN/acinetobacter_test.txt \
+                               -p $PAN/biomob_acinetobacter_test/biomob_acinetobacter_test-PAN.db  \
+                                                              -o $PAN/genome-similarity_test \
+                                                              --program fastANI
 
 
 anvi-display-pan -p $PAN/biomob_acinetobacter/biomob_acinetobacter-PAN.db -g $PAN/acinetobacter-GENOMES.db
-
