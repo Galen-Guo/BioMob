@@ -123,7 +123,7 @@ bowtie2 -x $MAPPING/$SAMPLE \
 -1 $TRIM/${SAMPLE}_clean1.fq.gz \
 -2 $TRIM/${SAMPLE}_clean2.fq.gz \
 -S $MAPPING/$SAMPLE.sam \
---threads 100
+--threads 25
 
 
 
@@ -154,37 +154,51 @@ anvi-script-add-default-collection -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFIL
 #generate new fasta file with contigs associated only with taxa of choice.
 anvi-summarize -c $ANVIO/$SAMPLE.db -p $ANVIO/profile/PROFILE.db -C $SAMPLE -o $ANVIO/$SAMPLE
 
-
-done
-
-
-
+### TAXA
 
 conda activate /isilon/ottawa-rdc/users/shared/chenw_lab/galen/gtdbtk
 
 GTDBTK_DATA_PATH="/isilon/common/reference/databases/gtdb/release202"
 
-
-for SAMPLE in `awk '{print $1}' $RAW/sample_name`;
-do
-echo $SAMPLE
-
-#directories
-
-
-TRIM=$WORK/$SAMPLE/trimming_clean
-ASSEMBLY=$WORK/$SAMPLE/assembly
-ANVIO=$WORK/$SAMPLE/anvio/
-MAPPING=$WORK/$SAMPLE/mapping/
-
 gtdbtk ani_rep --genome_dir $ANVIO/$SAMPLE/bin_by_bin/EVERYTHING/ --out_dir $ANVIO/$SAMPLE/gtdb_output -x fa --cpus 20 --prefix $SAMPLE
 
 done
 
+### for loop ends here
 
-gtdbtk ani_rep --genome_dir $WORK/all_fas/ --out_dir $WORK/all_fas/gtdb_output -x fa --cpus 20
+####################################################################
+### RAGTAG  #### NEED WORK ###
+####################################################################
+#download best reference genome. For this genome, Helicobacter canadensisn is best based on fastANI output
+# correct a query assembly
+# cp fasta file into ragtag folder in anvio
+cp $ANVIO/$SAMPLE/bin_by_bin/Helicobacter/Helicobacter-contigs.fa $ANVIO/$SAMPLE/ragtag/Helicobacter.fa
 
-### pangenomic?
+cp $ANVIO
+
+# scaffold a query assembly
+ragtag.py scaffold $WORK/$SAMPLE/reference_fasta/helicobacter_canadensis/chr.fna $ANVIO/$SAMPLE/bin_by_bin/Helicobacter/Helicobacter-contigs.fa
+
+ragtag.py correct $WORK/$SAMPLE/reference_fasta/helicobacter_canadensis/chr.fna $ANVIO/ragtag_output/ragtag.scaffold.fasta
+
+# make joins and fill gaps in target.fa using sequences from query.fa
+ragtag.py patch $ANVIO/ragtag_output/ragtag.scaffold.fasta $ANVIO/$SAMPLE/bin_by_bin/Helicobacter/Helicobacter-contigs.fa
+
+
+####################################################################
+### run abricate for AMR and Pathogenic elements
+####################################################################
+
+conda activate anvio7
+
+abricate  $ANVIO/ragtag_final/ragtag.scaffold.fa  -db ncbi > $ANVIO/abricate/abricate_ncbi.txt
+abricate $ANVIO/ragtag_final/ragtag.scaffold.fa  -db card > $ANVIO/abricate/abricate_card.txt
+abricate $ANVIO/ragtag_final/ragtag.scaffold.fa  -db vfdb > $ANVIO/abricate/abricate_vfdb.txt
+abricate --summary $ANVIO/abricate/abricate_ncbi.txt $ANVIO/abricate/abricate_card.txt $ANVIO/abricate/abricate_vfdb.txt > $ANVIO/abricate/abricate_summary.txt
+
+
+
+## pangenomic?
 
 #create external file
 
